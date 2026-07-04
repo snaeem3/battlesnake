@@ -80,10 +80,10 @@ def move(game_state: typing.Dict) -> typing.Dict:
 
     # TODO: Step 2 - Prevent your Battlesnake from colliding with itself
     my_body = game_state['you']['body'] # array of coordinates
-    right = my_head
-    left = my_head
-    up = my_head
-    down = my_head
+    right = my_head.copy()
+    left = my_head.copy()
+    up = my_head.copy()
+    down = my_head.copy()
 
     right["x"] = right["x"] + 1
     left["x"] = left["x"] - 1
