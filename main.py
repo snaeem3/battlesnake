@@ -32,13 +32,13 @@ class Board(TypedDict):
     width: int
     food: list[Coordinate]
     hazards: list[Coordinate]
-    snakes: list[Snake]
-    you: Snake
+    snakes: list[Snake] # including self
 
 class Game(TypedDict):
     id: str
     turn: int
     board: Board
+    you: Snake
 
 class Direction(Enum):
     LEFT = "left"
@@ -136,7 +136,12 @@ def move(game_state: Game) -> dict:
         is_move_safe[Direction.DOWN] = False
 
     # Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
-    opponents = game_state['board']['snakes']
+    opponents = [
+        snake
+        for snake in game_state['board']['snakes']
+        if snake["id"] != game_state["you"]["id"]
+    ]
+
     for opponent in opponents:
         opponent_body = opponent['body']
         if right in opponent_body:
@@ -164,18 +169,31 @@ def move(game_state: Game) -> dict:
     # Choose a random move from the safe ones
     next_move = random.choice(safe_moves)
 
-    # TODO: Step 4 - Move towards food instead of random, to regain health and survive longer
+    # Step 4 - Move towards food instead of random, to regain health and survive longer
     foods = game_state['board']['food']
 
     # Add the current distance away from the head to each food
     for food in foods:
         food["distance"] = getDistance(my_head, food)
+        food["iAmClosest"] = iAmClosest(my_head, food, (opponent["head"] for opponent in opponents))
 
     # sort the foods from closest to furthest
     foods.sort(key=lambda food: food["distance"])
 
+    # filter foods where I am closest
+    iAmClosestFoods = [
+        food 
+        for food in foods 
+        if food["iAmClosest"]
+    ]
+
+
     # get nearest food to head
     nearestFood = foods[0]
+
+    if len(iAmClosestFoods) > 0:
+        nearestFood = iAmClosestFoods[0]
+
     yDirection: Direction | None = None
     xDirection: Direction | None = None
 
@@ -203,6 +221,15 @@ def move(game_state: Game) -> dict:
 
 def getDistance(coord1: Coordinate, coord2: Coordinate) -> float:
     return math.sqrt((coord2["x"] - coord1["x"]) ** 2 + (coord2["y"] - coord1["y"]) ** 2)
+
+def iAmClosest(my_head: Coordinate, food: Coordinate, opponentHeads: list[Coordinate]) -> bool:
+    myDistance = getDistance(my_head, food)
+    iAmClosest = True
+    for opponentHead in opponentHeads:
+        if getDistance(opponentHead, food) <= myDistance:
+            iAmClosest = False
+        
+    return iAmClosest
 
 # Start server when `python main.py` is run
 if __name__ == "__main__":
