@@ -14,6 +14,9 @@ from typing import TypedDict
 from enum import Enum
 import random
 import math
+import copy
+from floodFill import floodFill
+from scoreMove import scoreMove
 
 class Coordinate(TypedDict):
     x: int
@@ -78,6 +81,12 @@ def end(game_state: dict):
 def move(game_state: Game) -> dict:
 
     is_move_safe = {Direction.UP: True, Direction.DOWN: True, Direction.LEFT: True, Direction.RIGHT: True}
+    moveOptions = {
+        Direction.UP: {"isSafe": True, "ffScore": 0, "foodDirection": False, "calculatedScore": 0}, 
+        Direction.DOWN: {"isSafe": True, "ffScore": 0, "foodDirection": False, "calculatedScore": 0}, 
+        Direction.LEFT: {"isSafe": True, "ffScore": 0, "foodDirection": False, "calculatedScore": 0}, 
+        Direction.RIGHT: {"isSafe": True, "ffScore": 0, "foodDirection": False, "calculatedScore": 0}, 
+    }
 
     # We've included code to prevent your Battlesnake from moving backwards
     my_head = game_state["you"]["body"][0]  # Coordinates of your head
@@ -85,15 +94,19 @@ def move(game_state: Game) -> dict:
 
     if my_neck["x"] < my_head["x"]:  # Neck is left of head, don't move left
         is_move_safe[Direction.LEFT] = False
+        moveOptions[Direction.LEFT]["isSafe"] = False
 
     elif my_neck["x"] > my_head["x"]:  # Neck is right of head, don't move right
         is_move_safe[Direction.RIGHT] = False
+        moveOptions[Direction.RIGHT]["isSafe"] = False
 
     elif my_neck["y"] < my_head["y"]:  # Neck is below head, don't move down
         is_move_safe[Direction.DOWN] = False
+        moveOptions[Direction.DOWN]["isSafe"] = False
 
     elif my_neck["y"] > my_head["y"]:  # Neck is above head, don't move up
         is_move_safe[Direction.UP] = False
+        moveOptions[Direction.UP]["isSafe"] = False
 
     # Step 1 - Prevent your Battlesnake from moving out of bounds
     board_width = game_state['board']['width']
@@ -101,15 +114,19 @@ def move(game_state: Game) -> dict:
 
     if my_head["x"] == board_width - 1:
         is_move_safe[Direction.RIGHT] = False
+        moveOptions[Direction.RIGHT]["isSafe"] = False
     
     if my_head["x"] == 0:
         is_move_safe[Direction.LEFT] = False
+        moveOptions[Direction.LEFT]["isSafe"] = False
 
     if my_head["y"] == board_height - 1:
         is_move_safe[Direction.UP] = False
+        moveOptions[Direction.UP]["isSafe"] = False
 
     if my_head["y"] == 0:
         is_move_safe[Direction.DOWN] = False
+        moveOptions[Direction.DOWN]["isSafe"] = False
 
     # Step 2 - Prevent your Battlesnake from colliding with itself
     my_body = game_state['you']['body'] # array of coordinates
@@ -125,15 +142,19 @@ def move(game_state: Game) -> dict:
 
     if right in my_body:
         is_move_safe[Direction.RIGHT] = False
+        moveOptions[Direction.RIGHT]["isSafe"] = False
 
     if left in my_body:
         is_move_safe[Direction.LEFT] = False
+        moveOptions[Direction.LEFT]["isSafe"] = False
 
     if up in my_body:
         is_move_safe[Direction.UP] = False
+        moveOptions[Direction.UP]["isSafe"] = False
     
     if down in my_body:
         is_move_safe[Direction.DOWN] = False
+        moveOptions[Direction.DOWN]["isSafe"] = False
 
     # Step 3 - Prevent your Battlesnake from colliding with other Battlesnakes
     opponents = [
@@ -146,15 +167,19 @@ def move(game_state: Game) -> dict:
         opponent_body = opponent['body']
         if right in opponent_body:
             is_move_safe[Direction.RIGHT] = False
+            moveOptions[Direction.RIGHT]["isSafe"] = False
 
         if left in opponent_body:
             is_move_safe[Direction.LEFT] = False
+            moveOptions[Direction.LEFT]["isSafe"] = False
 
         if up in opponent_body:
             is_move_safe[Direction.UP] = False
-        
+            moveOptions[Direction.UP]["isSafe"] = False
+
         if down in opponent_body:
             is_move_safe[Direction.DOWN] = False
+            moveOptions[Direction.DOWN]["isSafe"] = False
 
     # Are there any safe moves left?
     safe_moves: list[Direction] = []
@@ -165,9 +190,49 @@ def move(game_state: Game) -> dict:
     if len(safe_moves) == 0:
         print(f"MOVE {game_state['turn']}: No safe moves detected! Moving down")
         return {"move": "down"}
+    
+    # Determine Flood Fill score for each direction
+    grid = populateGrid(
+        game_state["board"]["height"], 
+        game_state["board"]["width"], 
+        game_state["you"]["body"], 
+        [opponent["body"] for opponent in opponents])
+    
+    bestDirection = safe_moves[0]
+    maxScore = 0
+    for direction in Direction:
+        score = 0
+        if direction in safe_moves:
+            match direction:
+                case Direction.RIGHT:
+                    score = floodFill(copy.deepcopy(grid), my_head["x"] + 1, my_head["y"])
+                    moveOptions[Direction.RIGHT]["ffScore"] = score
+                    # print(f"RIGHT score: {score} | {moveOptions[Direction.RIGHT]["ffScore"]}")
+                case Direction.LEFT:
+                    score = floodFill(copy.deepcopy(grid), my_head["x"] - 1, my_head["y"])
+                    moveOptions[Direction.LEFT]["ffScore"] = score
+                    # print(f"LEFT score: {score} | {moveOptions[Direction.LEFT]["ffScore"]}")
+                case Direction.UP:
+                    score = floodFill(copy.deepcopy(grid), my_head["x"], my_head["y"] + 1)
+                    moveOptions[Direction.UP]["ffScore"] = score
+                    # print(f"UP score: {score} | {moveOptions[Direction.UP]["ffScore"]}")
+                case _: # Direction.DOWN:
+                    score = floodFill(copy.deepcopy(grid), my_head["x"], my_head["y"] - 1)
+                    moveOptions[Direction.DOWN]["ffScore"] = score
+                    # print(f"DOWN score: {score} | {moveOptions[Direction.DOWN]["ffScore"]}")
+        else:
+            score = -1
+
+        if score > maxScore:
+            maxScore = score
+            bestDirection = direction
+                    
 
     # Choose a random move from the safe ones
     next_move = random.choice(safe_moves)
+
+    if bestDirection:
+        next_move = bestDirection
 
     # Step 4 - Move towards food instead of random, to regain health and survive longer
     foods = game_state['board']['food']
@@ -194,30 +259,58 @@ def move(game_state: Game) -> dict:
     if len(iAmClosestFoods) > 0:
         nearestFood = iAmClosestFoods[0]
 
-    yDirection: Direction | None = None
-    xDirection: Direction | None = None
+    yFoodDirection: Direction | None = None
+    xFoodDirection: Direction | None = None
 
     # determine if it needs to go right, left, or neither
     if nearestFood["x"] > my_head["x"]:
-        xDirection = Direction.RIGHT
+        xFoodDirection = Direction.RIGHT
+        moveOptions[Direction.RIGHT]["foodDirection"] = True
     elif nearestFood["x"] < my_head["x"]:
-        xDirection = Direction.LEFT
+        xFoodDirection = Direction.LEFT
+        moveOptions[Direction.LEFT]["foodDirection"] = True
 
     # determine if needs to go up, down, or neither
     if nearestFood["y"] > my_head["y"]:
-        yDirection = Direction.UP
+        yFoodDirection = Direction.UP
+        moveOptions[Direction.UP]["foodDirection"] = True
     elif nearestFood["y"] < my_head["y"]:
-        yDirection = Direction.DOWN
+        yFoodDirection = Direction.DOWN
+        moveOptions[Direction.DOWN]["foodDirection"] = True
 
     # update next_move
-    if xDirection in safe_moves:
-        next_move = xDirection
+    if xFoodDirection in safe_moves:
+        next_move = xFoodDirection
 
-    if yDirection in safe_moves:
-        next_move = yDirection
+    if yFoodDirection in safe_moves:
+        next_move = yFoodDirection
+
+    # Calculate scores for each move
+    boardArea = board_height * board_width
+    for direction, inputs in moveOptions.items():
+        moveOptions[direction]["calculatedScore"] = scoreMove(inputs, boardArea)
+    # print(f"moveOptions: {moveOptions}")
+
+    calculatedBestMove = max(
+        moveOptions,
+        key=lambda direction: moveOptions[direction]["calculatedScore"]
+    )
+    print(f"MOVE {game_state['turn']}: {calculatedBestMove.value}")
+    return {"move": calculatedBestMove.value}
     
     print(f"MOVE {game_state['turn']}: {next_move.value}")
     return {"move": next_move.value}
+
+def populateGrid(height: int, width: int, myBody: list[Coordinate], opponentBodies: list[list[Coordinate]]) -> list[list[bool]]:
+    grid = [[False for _ in range(height)] for _ in range(width)]
+    for coord in myBody:
+        grid[coord["x"]][coord["y"]] = True
+
+    for opponentBody in opponentBodies:
+        for coord in opponentBody:
+            grid[coord["x"]][coord["y"]] = True
+
+    return grid
 
 def getDistance(coord1: Coordinate, coord2: Coordinate) -> float:
     return math.sqrt((coord2["x"] - coord1["x"]) ** 2 + (coord2["y"] - coord1["y"]) ** 2)
